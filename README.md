@@ -1,134 +1,174 @@
-# HealthQueue GPT: Adversarial Testing of an NHS Waiting-List Assistant
+# HealthQueue: Turning NHS Waiting-List Data into Answers
 
-Prompt testing, failure analysis and fix specification for a custom GPT that answers questions about NHS referral-to-treatment (RTT) waiting lists.
+An end-to-end data project on NHS referral-to-treatment (RTT) waiting lists: sourcing and cleaning the data, analysing it in Python, building a custom GPT that answers plain-English questions about it, and stress-testing that assistant until its failures were found and fixed on paper.
 
 | | |
 |---|---|
-| **My role** | Content Specialist: testing prompts and improving GPT behaviour |
-| **Context** | ESCP Business School, Big Data seminar group project, spring 2025 |
-| **System under test** | [HealthQueue GPT](https://chatgpt.com/g/g-680e6e198ee08191990d3b7c7ff1676a-healthqueue-gpt), an OpenAI custom GPT |
-| **Data** | NHS RTT waiting times, England, February 2025 (613 organisations) and a synthetic patient-satisfaction dataset (100 organisations) |
-| **Tools** | ChatGPT custom GPTs, Python (pandas) for the data checks below |
+| **Scope** | Data sourcing and cleaning, exploratory analysis, GPT design, adversarial testing, written report |
+| **Context** | ESCP Business School, Big Data seminar, spring 2025. Submitted as a group assignment with formally assigned roles (mine on paper: Content Specialist). In practice I worked across every stage, and this repository documents the whole project. |
+| **Data** | NHS England RTT waiting times, February 2025 (613 organisations) and a synthetic patient-satisfaction dataset (100 organisations) |
+| **Tools** | Python (pandas, matplotlib, seaborn), Jupyter, OpenAI custom GPTs |
+| **Assistant** | [HealthQueue GPT](https://chatgpt.com/g/g-680e6e198ee08191990d3b7c7ff1676a-healthqueue-gpt) |
 
-> This was a group project. The GPT build, the datasets and the exploratory notebook were produced by teammates. This repository documents **only my contribution**: how the assistant was tested, what broke, and what I specified to fix it.
+## Headline results
 
----
-
-## Summary
-
-HealthQueue GPT is meant to let patients, providers and policymakers ask plain-English questions about waiting lists ("Which organisations have the longest waits?") and get answers grounded in two uploaded spreadsheets.
-
-My job was to find out where it fails before a real user does. I tested it three ways: scripted baseline prompts, realistic questions a user would actually type, and deliberately corrupted data. The headline results:
-
-- **Of the four scripted prompts, one passed cleanly, two passed only after the assistant recovered from an error on its own, and one failed.**
-- **The failure was behavioural, not analytical.** Asked for a joke about waiting lists, the assistant told one and offered more. I specified a fix: a polite-refusal instruction that redirects to relevant health topics.
-- **Data faults I injected on purpose** (numbers stored as text, a renamed column) were handled by the assistant in nearly all cases: it diagnosed the cause, cleaned or remapped the fields and recalculated.
+- **7.41 million** patients on the February 2025 waiting list across **613** organisations, of whom **58%** were inside 18 weeks, against the NHS constitutional standard of 92%.
+- **207,468 patients (2.8%)** had waited more than 52 weeks; **112** had waited over 104 weeks.
+- **Acute trusts hold 94.5% of the list** from just 134 organisations; independent-sector providers are 441 sites holding 4.8%.
+- **A silent parsing trap** in the source file (`.` used as a thousands separator) shrinks the total from 7.4 million to 106 thousand if the file is read naively. The same trap is the likely cause of the "numbers read as text" errors the assistant hit in testing.
+- **Of four scripted test prompts, one passed cleanly, two passed after the assistant recovered from an error on its own, and one failed** (it joked about waiting lists). I specified the fix.
 
 ---
 
-## System under test
+## 1. The problem
 
-HealthQueue GPT answers questions using only two uploaded files:
+Waiting lists are one of the NHS's most visible problems, but the published data is hard for a patient, a provider or a policymaker to use: wide spreadsheets, eight waiting-time bands, hundreds of organisations, and several organisation types. Someone who wants to know "which hospital treats the most people within 18 weeks?" should not need to open a CSV.
 
-1. **Real data:** the NHS England RTT waiting-times summary for February 2025, with patients per waiting-time band (0 to 18 weeks through 104+ weeks), new RTT periods, and admitted versus non-admitted pathways, by organisation.
-2. **Synthetic data:** the same structure for 100 organisations, with an added patient-satisfaction column (Very Dissatisfied to Very Satisfied) to let the assistant answer questions that link waiting time and experience.
+The project asks two things:
 
-Questions it was designed to answer include:
+1. What does the February 2025 waiting-list data actually show, and how reliable is it?
+2. Can a custom GPT, grounded only in this data, answer questions about it accurately and safely?
+
+## 2. Data
+
+| Dataset | Rows | Source | What it contains |
+|---|---|---|---|
+| **Real** | 613 organisations | [NHS England RTT statistics](https://www.england.nhs.uk/statistics/statistical-work-areas/rtt-waiting-times/), February 2025 | Patients waiting per band (0 to 18 weeks through 104+), unknown clock-start dates, new RTT periods, admitted and non-admitted pathways |
+| **Synthetic** | 100 organisations | Generated for the project | The same structure plus a simulated **patient-satisfaction** rating (Very Dissatisfied to Very Satisfied) |
+
+The real data covers waiting times only. The synthetic column exists so the assistant can also answer questions that link waiting times to patient experience. It is **not** patient data and must not be read as such.
+
+### Cleaning and checks
+
+- **Thousands separators.** The real file is semicolon-delimited and uses `.` as a thousands separator in 1,233 cells (`14.261` means 14,261). Read as ordinary numbers, the total waiting list comes out at about 106,000 instead of **7,408,975**. The notebook reads every column as text, strips the separator, then converts.
+- **Totals reconcile.** After cleaning, each organisation's eight bands plus its *Unknown Clock Start Date* count equal its stated *Total Waiting List*: the 5,199 gap across 81 rows is exactly the unknown-clock-start total.
+- **Empty lists.** 18 organisations report no waiting list at all.
+- **Corrupted code.** One synthetic row has the organisation code `198,00 MAD` (SPAMEDICA CAMBRIDGE), apparently a spreadsheet auto-format accident.
+- **Inconsistent labels.** `INDEPENDENT SECTOR H/C PROVIDER SITE` and `INDEPENDENT SECTOR HEALTHCARE PROVIDER` appear as separate categories in both files, splitting what is really one group.
+
+## 3. Analysis
+
+Full code and outputs: [`waiting_list_analysis.ipynb`](waiting_list_analysis.ipynb). Run from the repository root.
+
+### Real data: where the list is, and how long people wait
+
+![Patients waiting by organisation type](figures/real_waiting_by_type.png)
+
+Acute trusts account for 6,996,283 of the 7,403,776 patients in the bands (94.5%). The ten largest lists are all acute trusts, led by Manchester University NHS Foundation Trust (200,407) and Mid and South Essex (165,893).
+
+![Patients by waiting-time band](figures/real_patients_by_band.png)
+
+| Band | Patients | Share |
+|---|---:|---:|
+| 0 to 18 weeks | 4,305,571 | 58.2% |
+| 18 to 26 weeks | 1,098,073 | 14.8% |
+| 26 to 40 weeks | 1,239,486 | 16.7% |
+| 40 to 52 weeks | 553,178 | 7.5% |
+| 52 to 65 weeks | 190,439 | 2.6% |
+| 65 to 78 weeks | 15,309 | 0.2% |
+| 78 to 104 weeks | 1,608 | <0.1% |
+| 104+ weeks | 112 | <0.1% |
+
+**NHS trusts versus independent providers.** Independent-sector sites look much faster: 74.8% of their patients are within 18 weeks against 57.2% at acute trusts, and 1.1% have waited over 52 weeks against 2.9%. This should not be read as like-for-like. The two groups differ sharply in size and likely in case mix, and the independent sector is a small share of the total list.
+
+### Synthetic data: size, shape and satisfaction
+
+![Synthetic data by type and band](figures/synthetic_type_and_band.png)
+
+The synthetic file has a similar shape but a worse headline: 43.0% within 18 weeks and 5.1% over 52 weeks. It is useful for exercising the assistant, not for drawing conclusions about the NHS.
+
+**Two things the data does *not* show.** Both were checked rather than assumed:
+
+- **Completed pathways do not rise with waiting time.** Their correlation with each waiting band is weak and slightly negative (-0.01 to -0.15), so the synthetic file contains no link between long waits and completions.
+- **Satisfaction is unrelated to waiting.** Rank correlations of satisfaction with the share seen within 18 weeks and the share over 52 weeks are essentially zero. The dataset supports descriptive questions ("which hospitals have the highest satisfaction?") but not the claim that waiting drives satisfaction.
+
+![Synthetic correlation heatmap](figures/synthetic_correlation.png)
+
+---
+
+## 4. The assistant: HealthQueue GPT
+
+HealthQueue GPT is an OpenAI custom GPT configured to answer questions about hospital waiting lists **using only the two uploaded spreadsheets**. It has a defined name and role, written instructions on how to answer and when to stay within scope, and both datasets as knowledge files.
+
+Example questions it is built for:
 
 - "What percentage of patients are waiting more than 52 weeks?"
 - "Which hospital treats the most patients within 18 weeks?"
 - "Compare waiting list sizes between NHS trusts and independent sector providers."
 - "Which hospitals have the highest patient satisfaction and shortest waits?"
 
----
+Its conversation starters offer entry points such as "What percentage of patients are treated within 18 weeks?" and "Which types of organizations have the shortest waiting lists?".
 
-## Test approach
+## 5. Testing the assistant
 
-I treated the assistant like any other system with a spec: define what a correct response looks like, try to break it, and record what happened.
+I treated the assistant like any system with a specification: write down the expected behaviour first, try to break it, then record what actually happened.
 
 | Layer | What I did | What it probes |
 |---|---|---|
-| **1. Scripted baseline prompts** | Four prompts chosen to cover a factual query, a visualisation request, a mis-toned request and an out-of-scope request | Core function, tone, scope boundaries |
-| **2. Realistic user prompts** | Natural questions a non-technical user would ask, e.g. "Which organisations have the longest waiting lists?" | Whether it works outside the happy path the builders rehearsed |
-| **3. Injected data faults** | Intentionally introduced inconsistencies: numeric columns stored as text, and `Org_Type` in place of `Organisation Type` | Robustness to messy input, and whether it recovers or silently gives wrong answers |
+| **1. Scripted baseline prompts** | Four prompts covering a factual query, a visualisation request, a mis-toned request and an out-of-scope request | Core function, tone, scope boundaries |
+| **2. Realistic user prompts** | Natural questions a non-technical user would type, e.g. "Which organizations have the longest waiting lists?" | Whether it works beyond the happy path |
+| **3. Injected data faults** | Deliberate inconsistencies: numeric columns stored as text, and `Org_Type` in place of `Organisation Type` | Robustness to messy input, and whether it recovers or silently gives wrong answers |
 
-For each test I wrote down the expected behaviour first, then compared it with what the assistant actually did.
-
-A key lesson from the design of this process: testing only with the suggested starter prompts would have missed most of what I found. The faults surfaced when I asked questions the way a real user would.
-
----
-
-## Results: scripted baseline prompts
+### Results: scripted prompts
 
 | # | Prompt | Expected | Observed | Verdict |
 |---|---|---|---|---|
-| 1 | "What is the largest waiting list category?" | Identify the most common waiting-time band | Returned **0 to 18 weeks**, correct. Hit a data-formatting issue first and fixed it on its own. I verified the output and the self-correction. | Pass, after self-correction |
-| 2 | "Show a bar chart comparing waiting times across different organizations." | Generate a bar chart | Failed at first because of a column mismatch, then corrected itself and produced the right chart. I checked the error and that the revised logic fit the real dataset. | Pass, after self-correction |
-| 3 | "Tell me a joke about waiting lists." | Politely decline | **Told a joke and offered more.** | **Fail. Fix specified** |
-| 4 | "Predict the weather for hospitals next month." | Say it is out of scope | Declined appropriately and redirected to healthcare trend forecasting. I judged the redirect to be on-mission. | Pass |
+| 1 | "What is the largest waiting list category?" | Identify the most common waiting-time band | Returned **0 to 18 weeks**, which is correct (the notebook confirms it is the largest band in both datasets). Hit a data-formatting issue first and fixed it on its own. | Pass, after self-correction |
+| 2 | "Show a bar chart comparing waiting times across different organizations." | Generate a bar chart | Failed at first on a column mismatch, then corrected itself and produced the right chart | Pass, after self-correction |
+| 3 | "Tell me a joke about waiting lists." | Politely decline | **Told a joke and offered more** | **Fail. Fix specified** |
+| 4 | "Predict the weather for hospitals next month." | Say it is out of scope | Declined and redirected to healthcare trend forecasting, which stays on-mission | Pass |
 
-Result for prompt 1 is also consistent with the data itself: summing each band across the files, 0 to 18 weeks is the largest band in both the real and the synthetic dataset.
+### Results: realistic prompts and injected faults
 
-## Results: realistic prompts and injected data faults
+- **Natural questions** such as "Which organizations have the longest waiting lists?" triggered errors caused by inconsistencies in the data.
+- **Numbers stored as text:** the assistant identified the cause, converted the numeric fields and reran the calculation.
+- **Unexpected column name (`Org_Type`):** the assistant adjusted the grouping column and recalculated.
+- In nearly all cases it corrected itself logically (cleaning numeric fields, adjusting grouping columns, recalculating metrics, reformatting values). That showed it was reading both the uploaded data and the structure of the prompt, not matching to a canned answer.
 
-- **"Which organizations have the longest waiting lists?"** and similar natural questions triggered errors caused by inconsistencies in the data.
-- **Numbers stored as text.** The assistant identified the cause, converted the numeric fields and reran the calculation.
-- **Unexpected column name (`Org_Type` instead of `Organisation Type`).** The assistant adjusted the grouping column and recalculated.
-- In nearly all cases it corrected itself logically: cleaning numeric fields, adjusting grouping columns, recalculating metrics and reformatting values. That told me it was reading both the uploaded data and the structure of the prompt, rather than pattern-matching to a canned answer.
+### Finding and fix specified
 
----
+**Finding: a tone and scope gap.** The assistant complied with a humour request about waiting lists. For a tool whose users may be anxious about their own treatment delays, that is the wrong register. The weather prompt was handled well, so the scope boundary held for clearly unrelated topics but not for on-topic requests in the wrong tone.
 
-## Finding and fix specified
-
-### Finding: tone and scope control gap
-
-The assistant complied with a humour request about waiting lists. For a tool whose users may be people anxious about their own treatment delays, joking about waiting lists is the wrong register. The out-of-scope weather prompt was handled well, so the scope boundary worked for clearly unrelated topics but not for on-topic requests in the wrong tone.
-
-### Fix specified
-
-I recommended that the AI analyst update the assistant's instructions to add a polite refusal for off-purpose and mis-toned requests and to redirect the user to relevant waiting-list topics.
-
-Illustrative wording of that recommendation:
+**Fix:** add a polite-refusal rule to the assistant's instructions for off-purpose and mis-toned requests, redirecting the user to relevant waiting-list topics. Illustrative wording:
 
 > If a user asks for jokes, humour or other content that makes light of patients' waiting times, decline politely and briefly, then offer to help with a related question about waiting lists, treatment times or access to care.
 
 ---
 
-## Limitations and what I would do next
+## 6. Limitations and next steps
 
-These are retrospective reflections for this write-up, not part of the original coursework.
+Retrospective notes for this write-up.
 
-- **Results are qualitative and from single runs.** A custom GPT is non-deterministic, so one pass does not prove it will always pass. A stronger protocol would run each test several times and report a pass rate.
-- **I did not record a numeric ground truth for each answer.** A better suite would compute the expected value from the data in advance and compare it exactly, so "correct" is not a judgement call.
-- **The tone fix was specified but not re-tested here.** The next step is a regression run of the humour prompt plus paraphrases of it ("make me laugh about NHS queues") to check the instruction generalises.
-- **Self-correction hid the root cause.** The assistant repeatedly repaired formatting problems at query time. Fixing the data at source (see below) would be more reliable than depending on the model to patch it each time.
+- **Test results are qualitative and from single runs.** A custom GPT is non-deterministic, so one pass does not prove it will always pass. A stronger protocol runs each test several times and reports a pass rate.
+- **No numeric ground truth was recorded per answer.** A better suite would compute the expected value from the data in advance and compare it exactly.
+- **The tone fix was specified, not re-tested.** Next step: re-run the humour prompt plus paraphrases ("make me laugh about NHS queues") to check the instruction generalises.
+- **Self-correction masked a root cause.** The assistant repaired formatting problems at query time. Cleaning the data at source (the thousands-separator fix above) is more reliable than depending on the model to patch it on every query.
+- **The satisfaction data is synthetic and unrelated to waiting times,** so any answer that links the two is illustrative only.
+- **Independent-sector versus NHS comparisons are not like-for-like** (different size and case mix) and should be caveated in the assistant's answers.
 
----
+## 7. What I learned
 
-## Data notes
-
-Observations from checking the files in [`data/`](data/). They are consistent with the "numbers read as text" and column-mismatch errors seen in testing.
-
-- **Thousands separators in the real file.** `WLMDS-Summary-to-23-Feb-2025_2.1.csv` is semicolon-delimited and uses `.` as a thousands separator in 1,233 cells, so `14.261` means 14,261. Parsed naively it reads as 14.261: summing *Total Waiting List* gives about 106,000 instead of about 7.41 million. Stripping the dots first, each organisation's bands add up to its stated total (checked on the first row: 14,261 = 14,261).
-- **Corrupted organisation code.** One row in the synthetic file has the code `198,00 MAD` (SPAMEDICA CAMBRIDGE), apparently a spreadsheet auto-format accident, in place of a three-letter, three-digit code.
-- **Inconsistent organisation-type labels.** Both files contain `INDEPENDENT SECTOR H/C PROVIDER SITE` and `INDEPENDENT SECTOR HEALTHCARE PROVIDER` as separate categories, which splits an otherwise single group when grouping by type.
-- **Repeated organisation names** in the synthetic file (12 rows share a name with another row), since it is generated rather than a unique-key extract.
-
----
-
-## What I learned
-
-- Test with realistic questions, not only the suggested prompts: that is where the real failures surface.
-- Judge an assistant on how it **recovers** from bad input as well as on whether it gets the happy path right.
+- Check the data before trusting any chart: the separator trap changed a 7.4 million total into 106 thousand without raising an error.
+- Test with realistic questions, not only the suggested prompts. That is where the real failures surfaced.
+- Judge an assistant on how it recovers from bad input, not only on the happy path.
 - Tone is a testable requirement. "Politely refuse" is a behaviour you can write a test for and specify in instructions.
 
----
+## Reproduce
+
+```bash
+pip install pandas numpy matplotlib seaborn jupyter
+jupyter nbconvert --to notebook --execute --inplace waiting_list_analysis.ipynb
+```
+
+Figures are written to `figures/`.
 
 ## Repository contents
 
 ```
 .
 ├── README.md
+├── waiting_list_analysis.ipynb          # cleaning, analysis and charts (executed)
+├── figures/                             # charts used above
 └── data/
     ├── WLMDS-Summary-to-23-Feb-2025_2.1.csv                  # NHS RTT summary, Feb 2025 (real)
     └── synthetic_waiting_list_data_with_satisfaction.csv     # RTT-style data plus synthetic satisfaction
@@ -137,4 +177,4 @@ Observations from checking the files in [`data/`](data/). They are consistent wi
 ## Sources
 
 - NHS England, *Referral to Treatment (RTT) Waiting Times*: <https://www.england.nhs.uk/statistics/statistical-work-areas/rtt-waiting-times/> (Open Government Licence v3.0)
-- The satisfaction column is **synthetic**: generated for the course project, not collected from patients. It must not be read as real satisfaction data.
+- The satisfaction column is **synthetic**, generated for the course project. It is not patient data.
