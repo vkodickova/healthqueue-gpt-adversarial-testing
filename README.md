@@ -5,7 +5,7 @@ An end-to-end data project on NHS referral-to-treatment (RTT) waiting lists: sou
 | | |
 |---|---|
 | **Scope** | Data sourcing and cleaning, exploratory analysis, GPT design, adversarial testing, written report |
-| **Context** | ESCP Business School, Big Data seminar, spring 2025. Submitted as a group assignment with formally assigned roles (mine on paper: Content Specialist). In practice I worked across every stage, and this repository documents the whole project. |
+| **Course** | ESCP Business School, Big Data seminar, spring 2025 |
 | **Data** | NHS England RTT waiting times, February 2025 (613 organisations) and a synthetic patient-satisfaction dataset (100 organisations) |
 | **Tools** | Python (pandas, matplotlib, seaborn), Jupyter, OpenAI custom GPTs |
 | **Assistant** | [HealthQueue GPT](https://chatgpt.com/g/g-680e6e198ee08191990d3b7c7ff1676a-healthqueue-gpt) |
