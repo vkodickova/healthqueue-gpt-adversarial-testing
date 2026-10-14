@@ -8,7 +8,7 @@ An end-to-end data project on NHS referral-to-treatment (RTT) waiting lists: sou
 | **Course** | ESCP Business School, Big Data seminar, spring 2025 |
 | **Data** | NHS England RTT waiting times, February 2025 (613 organisations) and a synthetic patient-satisfaction dataset (100 organisations) |
 | **Tools** | Python (pandas, matplotlib, seaborn), Jupyter, OpenAI custom GPTs |
-| **Assistant** | [HealthQueue GPT](https://chatgpt.com/g/g-680e6e198ee08191990d3b7c7ff1676a-healthqueue-gpt) |
+| **Assistant** | HealthQueue GPT (an OpenAI custom GPT) |
 
 ## Headline results
 
