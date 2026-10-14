@@ -6,13 +6,13 @@ An end-to-end data project on NHS referral-to-treatment (RTT) waiting lists: sou
 |---|---|
 | **Scope** | Data sourcing and cleaning, exploratory analysis, GPT design, adversarial testing, written report |
 | **Course** | ESCP Business School, Big Data seminar, spring 2025 |
-| **Data** | NHS England RTT waiting times, February 2025 (613 organisations) and a synthetic patient-satisfaction dataset (100 organisations) |
+| **Data** | NHS England Waiting List Minimum Dataset (WLMDS) summary to 23 February 2025 (613 organisations) and a synthetic patient-satisfaction dataset (100 organisations) |
 | **Tools** | Python (pandas, matplotlib, seaborn), Jupyter, OpenAI custom GPTs |
 | **Assistant** | HealthQueue GPT (an OpenAI custom GPT) |
 
 ## Headline results
 
-- **7.41 million** patients on the February 2025 waiting list across **613** organisations, of whom **58%** were inside 18 weeks, against the NHS constitutional standard of 92%.
+- **7.41 million** patients on the waiting list (NHS England WLMDS summary to 23 February 2025) across **613** organisations, of whom **58%** were inside 18 weeks, against the NHS constitutional standard of 92%.
 - **207,468 patients (2.8%)** had waited more than 52 weeks; **112** had waited over 104 weeks.
 - **Acute trusts hold 94.5% of the list** from just 134 organisations; independent-sector providers are 441 sites holding 4.8%.
 - **A silent parsing trap** in the source file (`.` used as a thousands separator) shrinks the total from 7.4 million to 106 thousand if the file is read naively. The same trap is the likely cause of the "numbers read as text" errors the assistant hit in testing.
@@ -33,7 +33,7 @@ The project asks two things:
 
 | Dataset | Rows | Source | What it contains |
 |---|---|---|---|
-| **Real** | 613 organisations | [NHS England RTT statistics](https://www.england.nhs.uk/statistics/statistical-work-areas/rtt-waiting-times/), February 2025 | Patients waiting per band (0 to 18 weeks through 104+), unknown clock-start dates, new RTT periods, admitted and non-admitted pathways |
+| **Real** | 613 organisations | [NHS England RTT statistics](https://www.england.nhs.uk/statistics/statistical-work-areas/rtt-waiting-times/): Waiting List Minimum Dataset (WLMDS) summary, to 23 February 2025 | Patients waiting per band (0 to 18 weeks through 104+), unknown clock-start dates, new RTT periods, admitted and non-admitted pathways |
 | **Synthetic** | 100 organisations | Generated for the project | The same structure plus a simulated **patient-satisfaction** rating (Very Dissatisfied to Very Satisfied) |
 
 The real data covers waiting times only. The synthetic column exists so the assistant can also answer questions that link waiting times to patient experience. It is **not** patient data and must not be read as such.
@@ -170,7 +170,7 @@ Figures are written to `figures/`.
 ├── waiting_list_analysis.ipynb          # cleaning, analysis and charts (executed)
 ├── figures/                             # charts used above
 └── data/
-    ├── WLMDS-Summary-to-23-Feb-2025_2.1.csv                  # NHS RTT summary, Feb 2025 (real)
+    ├── WLMDS-Summary-to-23-Feb-2025_2.1.csv                  # NHS WLMDS summary to 23 Feb 2025 (real)
     └── synthetic_waiting_list_data_with_satisfaction.csv     # RTT-style data plus synthetic satisfaction
 ```
 
